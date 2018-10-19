@@ -16,6 +16,7 @@ describe("blockchain/log-processors/market-created", () => {
       outcomes: next => db("outcomes").where({marketId: params.log.market}).asCallback(next),
       tokens: next => db("tokens").select(["contractAddress", "symbol", "marketId", "outcome"]).where({marketId: params.log.market}).asCallback(next),
       search: next => db("search_en").where({marketId: params.log.market}).asCallback(next),
+      transfers: next => db("transfers").where({ recipient: params.log.market }).asCallback(next),
     }, callback);
     it(t.description, (done) => {
       setupTestDb((err, db) => {
@@ -24,13 +25,25 @@ describe("blockchain/log-processors/market-created", () => {
           processMarketCreatedLog(trx, t.params.augur, t.params.log, (err) => {
             assert.ifError(err);
             getState(trx, t.params, (err, records) => {
-              t.assertions.onAdded(err, records);
+              t.assertions.onAdded(err, records, false);
               processMarketCreatedLogRemoval(trx, t.params.augur, t.params.log, (err) => {
                 assert.ifError(err);
                 getState(trx, t.params, (err, records) => {
                   t.assertions.onRemoved(err, records);
-                  db.destroy();
-                  done();
+                  processMarketCreatedLog(trx, t.params.augur, t.params.log, (err) => {
+                    assert.ifError(err);
+                    getState(trx, t.params, (err, records) => {
+                      t.assertions.onAdded(err, records, true);
+                      processMarketCreatedLogRemoval(trx, t.params.augur, t.params.log, (err) => {
+                        assert.ifError(err);
+                        getState(trx, t.params, (err, records) => {
+                          t.assertions.onRemoved(err, records);
+                          db.destroy();
+                          done();
+                        });
+                      });
+                    });
+                  });
                 });
               });
             });
@@ -45,13 +58,15 @@ describe("blockchain/log-processors/market-created", () => {
     params: {
       log: {
         blockNumber: 7,
+        transactionHash: "0x000000000000000000000000000000000000000000000000000000000000A000",
+        logIndex: 0,
         universe: "0x000000000000000000000000000000000000000b",
         market: "0x1111111111111111111111111111111111111111",
         marketCreator: "0x0000000000000000000000000000000000000b0b",
         marketCreationFee: "0.1",
         topic: "TEST_CATEGORY",
         marketType: "0",
-        minPrice: (new BigNumber("0", 10)).toFixed(),
+        minPrice: (new BigNumber("0", 10)).toString(),
         maxPrice: "1",
         description: "this is a test market",
         extraInfo: {
@@ -90,6 +105,9 @@ describe("blockchain/log-processors/market-created", () => {
             getShareToken: (p, callback) => {
               callback(null, `SHARE_TOKEN_${p._outcome}`);
             },
+            getValidityBondAttoeth: (p, callback) => {
+              callback(null, "800");
+            },
           },
           Universe: {
             getOrCacheReportingFeeDivisor: (p, callback) => {
@@ -102,7 +120,7 @@ describe("blockchain/log-processors/market-created", () => {
       },
     },
     assertions: {
-      onAdded: (err, records) => {
+      onAdded: (err, records, isReAdded) => {
         assert.ifError(err);
         assert.deepEqual(records, {
           markets: [{
@@ -113,6 +131,8 @@ describe("blockchain/log-processors/market-created", () => {
             minPrice: new BigNumber("0", 10),
             maxPrice: new BigNumber("1", 10),
             marketCreator: "0x0000000000000000000000000000000000000b0b",
+            transactionHash: "0x000000000000000000000000000000000000000000000000000000000000A000",
+            logIndex: 0,
             creationBlockNumber: 7,
             creationFee: new BigNumber("0.1", 10),
             creationTime: 10000000,
@@ -123,19 +143,20 @@ describe("blockchain/log-processors/market-created", () => {
             marketCreatorMailbox: "0xbbb1111111111111111111111111111111111111",
             marketCreatorMailboxOwner: "0x0000000000000000000000000000000000000b0b",
             initialReportSize: null,
+            validityBondSize: new BigNumber("800", 10),
             category: "TEST_CATEGORY",
             tag1: "TEST_TAG_1",
             tag2: "TEST_TAG_2",
             volume: new BigNumber("0", 10),
             shareVolume: new BigNumber("0", 10),
             sharesOutstanding: new BigNumber("0", 10),
-            openInterest: "0",
+            openInterest: new BigNumber("0", 10),
             reportingState: "PRE_REPORTING",
             feeWindow: "0x1000000000000000000000000000000000000001",
             endTime: 4886718345,
             finalizationBlockNumber: null,
             lastTradeBlockNumber: null,
-            marketStateId: 18,
+            marketStateId: isReAdded ? 19 : 18,
             shortDescription: "this is a test market",
             longDescription: "this is the long description of a test market",
             scalarDenomination: null,
@@ -189,6 +210,15 @@ describe("blockchain/log-processors/market-created", () => {
             marketId: "0x1111111111111111111111111111111111111111",
             outcome: 1,
           }],
+          transfers: [{
+            blockNumber: 7,
+            logIndex: 0,
+            recipient: "0x1111111111111111111111111111111111111111",
+            sender: "0x0000000000000000000000000000000000000b0b",
+            token: "ether",
+            transactionHash: "0x000000000000000000000000000000000000000000000000000000000000A000",
+            value: new BigNumber("800", 10),
+          }],
         });
       },
       onRemoved: (err, records) => {
@@ -203,6 +233,7 @@ describe("blockchain/log-processors/market-created", () => {
           outcomes: [],
           search: [],
           tokens: [],
+          transfers: [],
         });
       },
     },
@@ -212,14 +243,16 @@ describe("blockchain/log-processors/market-created", () => {
     params: {
       log: {
         blockNumber: 7,
+        transactionHash: "0x000000000000000000000000000000000000000000000000000000000000A001",
+        logIndex: 0,
         universe: "0x000000000000000000000000000000000000000b",
         market: "0x1111111111111111111111111111111111111112",
         marketCreator: "0x0000000000000000000000000000000000000b0b",
         marketCreationFee: "0.1",
         topic: "TEST_CATEGORY",
         marketType: "1",
-        minPrice: (new BigNumber("0", 10)).toFixed(),
-        maxPrice: (new BigNumber("1", 10)).toFixed(),
+        minPrice: (new BigNumber("0", 10)).toString(),
+        maxPrice: (new BigNumber("1", 10)).toString(),
         description: "this is a test market",
         outcomes: ["test outcome 0", "test outcome 1", "test outcome 2", "test outcome 3"],
         extraInfo: {
@@ -258,6 +291,9 @@ describe("blockchain/log-processors/market-created", () => {
             getShareToken: (p, callback) => {
               callback(null, `SHARE_TOKEN_${p._outcome}`);
             },
+            getValidityBondAttoeth: (p, callback) => {
+              callback(null, "800");
+            },
           },
           Universe: {
             getOrCacheReportingFeeDivisor: (p, callback) => {
@@ -270,7 +306,7 @@ describe("blockchain/log-processors/market-created", () => {
       },
     },
     assertions: {
-      onAdded: (err, records) => {
+      onAdded: (err, records, isReAdded) => {
         assert.ifError(err);
         assert.deepEqual(records, {
           markets: [{
@@ -281,6 +317,8 @@ describe("blockchain/log-processors/market-created", () => {
             minPrice: new BigNumber("0", 10),
             maxPrice: new BigNumber("1", 10),
             marketCreator: "0x0000000000000000000000000000000000000b0b",
+            transactionHash: "0x000000000000000000000000000000000000000000000000000000000000A001",
+            logIndex: 0,
             creationBlockNumber: 7,
             creationFee: new BigNumber("0.1", 10),
             creationTime: 10000000,
@@ -291,19 +329,20 @@ describe("blockchain/log-processors/market-created", () => {
             marketCreatorMailbox: "0xbbb1111111111111111111111111111111111112",
             marketCreatorMailboxOwner: "0x0000000000000000000000000000000000000b0b",
             initialReportSize: null,
+            validityBondSize: new BigNumber("800", 10),
             category: "TEST_CATEGORY",
             tag1: "TEST_TAG_1",
             tag2: "TEST_TAG_2",
             volume: new BigNumber("0", 10),
             shareVolume: new BigNumber("0", 10),
             sharesOutstanding: new BigNumber("0", 10),
-            openInterest: "0",
+            openInterest: new BigNumber("0", 10),
             reportingState: "PRE_REPORTING",
             feeWindow: "0x1000000000000000000000000000000000000001",
             endTime: 4886718345,
             finalizationBlockNumber: null,
             lastTradeBlockNumber: null,
-            marketStateId: 18,
+            marketStateId: isReAdded ? 19 : 18,
             shortDescription: "this is a test market",
             longDescription: "this is the long description of a test market",
             scalarDenomination: null,
@@ -381,6 +420,15 @@ describe("blockchain/log-processors/market-created", () => {
             marketId: "0x1111111111111111111111111111111111111112",
             outcome: 3,
           }],
+          transfers: [{
+            blockNumber: 7,
+            logIndex: 0,
+            recipient: "0x1111111111111111111111111111111111111112",
+            sender: "0x0000000000000000000000000000000000000b0b",
+            token: "ether",
+            transactionHash: "0x000000000000000000000000000000000000000000000000000000000000A001",
+            value: new BigNumber("800", 10),
+          }],
         });
       },
       onRemoved: (err, records) => {
@@ -395,6 +443,7 @@ describe("blockchain/log-processors/market-created", () => {
           outcomes: [],
           search: [],
           tokens: [],
+          transfers: [],
         });
       },
     },
@@ -404,14 +453,16 @@ describe("blockchain/log-processors/market-created", () => {
     params: {
       log: {
         blockNumber: 7,
+        transactionHash: "0x000000000000000000000000000000000000000000000000000000000000A002",
+        logIndex: 0,
         universe: "0x000000000000000000000000000000000000000b",
         market: "0x1111111111111111111111111111111111111113",
         marketCreator: "0x0000000000000000000000000000000000000b0b",
         marketCreationFee: "0.1",
         topic: "TEST_CATEGORY",
         marketType: "2",
-        minPrice: (new BigNumber("-3", 10)).toFixed(),
-        maxPrice: (new BigNumber("15.2", 10)).toFixed(),
+        minPrice: (new BigNumber("-3", 10)).toString(),
+        maxPrice: (new BigNumber("15.2", 10)).toString(),
         description: "this is a test market",
         extraInfo: {
           tags: ["TEST_TAG_1", "TEST_TAG_2"],
@@ -449,6 +500,9 @@ describe("blockchain/log-processors/market-created", () => {
             getShareToken: (p, callback) => {
               callback(null, `SHARE_TOKEN_${p._outcome}`);
             },
+            getValidityBondAttoeth: (p, callback) => {
+              callback(null, "800");
+            },
           },
           Universe: {
             getOrCacheReportingFeeDivisor: (p, callback) => {
@@ -461,7 +515,7 @@ describe("blockchain/log-processors/market-created", () => {
       },
     },
     assertions: {
-      onAdded: (err, records) => {
+      onAdded: (err, records, isReAdded) => {
         assert.ifError(err);
         assert.deepEqual(records, {
           markets: [{
@@ -472,6 +526,8 @@ describe("blockchain/log-processors/market-created", () => {
             minPrice: new BigNumber("-3", 10),
             maxPrice: new BigNumber("15.2", 10),
             marketCreator: "0x0000000000000000000000000000000000000b0b",
+            transactionHash: "0x000000000000000000000000000000000000000000000000000000000000A002",
+            logIndex: 0,
             creationBlockNumber: 7,
             creationFee: new BigNumber("0.1", 10),
             creationTime: 10000000,
@@ -482,19 +538,20 @@ describe("blockchain/log-processors/market-created", () => {
             marketCreatorMailbox: "0xbbb1111111111111111111111111111111111113",
             marketCreatorMailboxOwner: "0x0000000000000000000000000000000000000b0b",
             initialReportSize: null,
+            validityBondSize: new BigNumber("800", 10),
             category: "TEST_CATEGORY",
             tag1: "TEST_TAG_1",
             tag2: "TEST_TAG_2",
             volume: new BigNumber("0", 10),
             shareVolume: new BigNumber("0", 10),
             sharesOutstanding: new BigNumber("0", 10),
-            openInterest: "0",
+            openInterest: new BigNumber("0", 10),
             reportingState: "PRE_REPORTING",
             feeWindow: "0x1000000000000000000000000000000000000001",
             endTime: 4886718345,
             finalizationBlockNumber: null,
             lastTradeBlockNumber: null,
-            marketStateId: 18,
+            marketStateId: isReAdded ? 19 : 18,
             shortDescription: "this is a test market",
             longDescription: "this is the long description of a test market",
             scalarDenomination: null,
@@ -548,6 +605,15 @@ describe("blockchain/log-processors/market-created", () => {
             marketId: "0x1111111111111111111111111111111111111113",
             outcome: 1,
           }],
+          transfers: [{
+            blockNumber: 7,
+            logIndex: 0,
+            recipient: "0x1111111111111111111111111111111111111113",
+            sender: "0x0000000000000000000000000000000000000b0b",
+            token: "ether",
+            transactionHash: "0x000000000000000000000000000000000000000000000000000000000000A002",
+            value: new BigNumber("800", 10),
+          }],
         });
       },
       onRemoved: (err, records) => {
@@ -562,6 +628,7 @@ describe("blockchain/log-processors/market-created", () => {
           outcomes: [],
           search: [],
           tokens: [],
+          transfers: [],
         });
       },
     },
@@ -571,14 +638,16 @@ describe("blockchain/log-processors/market-created", () => {
     params: {
       log: {
         blockNumber: 7,
+        transactionHash: "0x000000000000000000000000000000000000000000000000000000000000A003",
+        logIndex: 0,
         universe: "0x000000000000000000000000000000000000000b",
         market: "0x1111111111111111111111111111111111111111",
         marketCreator: "0x0000000000000000000000000000000000000b0b",
         marketCreationFee: "0.1",
         topic: "TEST_CATEGORY",
         marketType: "0",
-        minPrice: (new BigNumber("0", 10)).toFixed(),
-        maxPrice: (new BigNumber("1", 10)).toFixed(),
+        minPrice: (new BigNumber("0", 10)).toString(),
+        maxPrice: (new BigNumber("1", 10)).toString(),
         description: "this is a test market",
         extraInfo: null,
       },
@@ -612,6 +681,9 @@ describe("blockchain/log-processors/market-created", () => {
             getShareToken: (p, callback) => {
               callback(null, `SHARE_TOKEN_${p._outcome}`);
             },
+            getValidityBondAttoeth: (p, callback) => {
+              callback(null, "800");
+            },
           },
           Universe: {
             getOrCacheReportingFeeDivisor: (p, callback) => {
@@ -624,7 +696,7 @@ describe("blockchain/log-processors/market-created", () => {
       },
     },
     assertions: {
-      onAdded: (err, records) => {
+      onAdded: (err, records, isReAdded) => {
         assert.ifError(err);
         assert.deepEqual(records, {
           markets: [{
@@ -635,6 +707,8 @@ describe("blockchain/log-processors/market-created", () => {
             minPrice: new BigNumber("0", 10),
             maxPrice: new BigNumber("1", 10),
             marketCreator: "0x0000000000000000000000000000000000000b0b",
+            transactionHash: "0x000000000000000000000000000000000000000000000000000000000000A003",
+            logIndex: 0,
             creationBlockNumber: 7,
             creationFee: new BigNumber("0.1", 10),
             creationTime: 10000000,
@@ -645,19 +719,20 @@ describe("blockchain/log-processors/market-created", () => {
             marketCreatorMailbox: "0xbbb1111111111111111111111111111111111111",
             marketCreatorMailboxOwner: "0x0000000000000000000000000000000000000b0b",
             initialReportSize: null,
+            validityBondSize: new BigNumber("800", 10),
             category: "TEST_CATEGORY",
             tag1: null,
             tag2: null,
             volume: new BigNumber("0", 10),
             shareVolume: new BigNumber("0", 10),
             sharesOutstanding: new BigNumber("0", 10),
-            openInterest: "0",
+            openInterest: new BigNumber("0", 10),
             reportingState: "PRE_REPORTING",
             feeWindow: "0x1000000000000000000000000000000000000001",
             endTime: 4886718345,
             finalizationBlockNumber: null,
             lastTradeBlockNumber: null,
-            marketStateId: 18,
+            marketStateId: isReAdded ? 19 : 18,
             shortDescription: "this is a test market",
             longDescription: null,
             scalarDenomination: null,
@@ -711,6 +786,15 @@ describe("blockchain/log-processors/market-created", () => {
             marketId: "0x1111111111111111111111111111111111111111",
             outcome: 1,
           }],
+          transfers: [{
+            blockNumber: 7,
+            logIndex: 0,
+            recipient: "0x1111111111111111111111111111111111111111",
+            sender: "0x0000000000000000000000000000000000000b0b",
+            token: "ether",
+            transactionHash: "0x000000000000000000000000000000000000000000000000000000000000A003",
+            value: new BigNumber("800", 10),
+          }],
         });
       },
       onRemoved: (err, records) => {
@@ -725,6 +809,7 @@ describe("blockchain/log-processors/market-created", () => {
           outcomes: [],
           search: [],
           tokens: [],
+          transfers: [],
         });
       },
     },
@@ -734,13 +819,15 @@ describe("blockchain/log-processors/market-created", () => {
     params: {
       log: {
         blockNumber: 7,
+        transactionHash: "0x000000000000000000000000000000000000000000000000000000000000A004",
+        logIndex: 0,
         universe: "0x000000000000000000000000000000000000000b",
         market: "0x1111111111111111111111111111111111111111",
         marketCreator: "0x0000000000000000000000000000000000000b0b",
         marketCreationFee: "0",
         topic: "TEST_CATEGORY",
         marketType: "0",
-        minPrice: (new BigNumber("0", 10)).toFixed(),
+        minPrice: (new BigNumber("0", 10)).toString(),
         maxPrice: "1",
         description: "this is a test market",
         extraInfo: {
@@ -783,6 +870,9 @@ describe("blockchain/log-processors/market-created", () => {
             getShareToken: (p, callback) => {
               callback(null, `SHARE_TOKEN_${p._outcome}`);
             },
+            getValidityBondAttoeth: (p, callback) => {
+              callback(null, "800");
+            },
           },
           Universe: {
             getOrCacheReportingFeeDivisor: (p, callback) => {
@@ -795,7 +885,7 @@ describe("blockchain/log-processors/market-created", () => {
       },
     },
     assertions: {
-      onAdded: (err, records) => {
+      onAdded: (err, records, isReAdded) => {
         assert.ifError(err);
         assert.deepEqual(records, {
           markets: [{
@@ -806,10 +896,12 @@ describe("blockchain/log-processors/market-created", () => {
             minPrice: new BigNumber("0", 10),
             maxPrice: new BigNumber("1", 10),
             marketCreator: "0x0000000000000000000000000000000000000b0b",
+            transactionHash: "0x000000000000000000000000000000000000000000000000000000000000A004",
+            logIndex: 0,
             creationBlockNumber: 7,
             creationFee: new BigNumber("0", 10),
             creationTime: 10000000,
-            openInterest: "0",
+            openInterest: new BigNumber("0", 10),
             reportingFeeRate: new BigNumber("0.001", 10),
             disputeRounds: null,
             marketCreatorFeeRate: new BigNumber("0.01", 10),
@@ -817,6 +909,7 @@ describe("blockchain/log-processors/market-created", () => {
             marketCreatorMailbox: "0xbbb1111111111111111111111111111111111111",
             marketCreatorMailboxOwner: "0x0000000000000000000000000000000000000b0b",
             initialReportSize: null,
+            validityBondSize: new BigNumber("800", 10),
             category: "TEST_CATEGORY",
             tag1: "TEST_TAG_1",
             tag2: "TEST_TAG_2",
@@ -828,7 +921,7 @@ describe("blockchain/log-processors/market-created", () => {
             endTime: 4886718345,
             finalizationBlockNumber: null,
             lastTradeBlockNumber: null,
-            marketStateId: 18,
+            marketStateId: isReAdded ? 19 : 18,
             shortDescription: "this is a test market",
             longDescription: "this is the long description of a test market",
             scalarDenomination: null,
@@ -882,6 +975,15 @@ describe("blockchain/log-processors/market-created", () => {
             marketId: "0x1111111111111111111111111111111111111111",
             outcome: 1,
           }],
+          transfers: [{
+            blockNumber: 7,
+            logIndex: 0,
+            recipient: "0x1111111111111111111111111111111111111111",
+            sender: "0x0000000000000000000000000000000000000b0b",
+            token: "ether",
+            transactionHash: "0x000000000000000000000000000000000000000000000000000000000000A004",
+            value: new BigNumber("800", 10),
+          }],
         });
       },
       onRemoved: (err, records) => {
@@ -896,6 +998,7 @@ describe("blockchain/log-processors/market-created", () => {
           outcomes: [],
           search: [],
           tokens: [],
+          transfers: [],
         });
       },
     },

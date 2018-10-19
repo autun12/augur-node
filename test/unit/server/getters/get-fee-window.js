@@ -2,7 +2,7 @@
 
 const assert = require("chai").assert;
 const setupTestDb = require("../../test.database");
-const { getFeeWindow } = require("../../../../src/server/getters/get-fee-window");
+const { dispatchJsonRpcRequest } = require("../../../../src/server/dispatch-json-rpc-request");
 const { setOverrideTimestamp, removeOverrideTimestamp } = require("../../../../src/blockchain/process-block");
 
 const augurMock = {
@@ -30,7 +30,8 @@ describe("server/getters/get-fee-window", () => {
         if (err) assert.fail(err);
         setOverrideTimestamp(db, t.params.overrideTimestamp || 1, (err) => {
           assert.ifError(err);
-          getFeeWindow(db, t.params.augur, t.params.universe, t.params.reporter, t.params.feeWindowState, t.params.feeWindow, (err, feeWindow) => {
+          t.method = "getFeeWindow";
+          dispatchJsonRpcRequest(db,  t, t.params.augur, (err, feeWindow) => {
             t.assertions(err, feeWindow);
             removeOverrideTimestamp(db, t.params.overrideTimestamp || 1, (err) => {
               assert.isNotNull(err);
@@ -57,6 +58,8 @@ describe("server/getters/get-fee-window", () => {
         feeWindow: "0x2000000000000000000000000000000000000000",
         feeToken: "FEE_TOKEN_2",
         feeWindowId: 457,
+        feeWindowFeeTokens: "100",
+        feeWindowParticipationTokens: "1000",
         startTime: 1509065473,
         feeWindowEthFees: "2000",
         feeWindowRepStaked: "1100",
@@ -82,6 +85,8 @@ describe("server/getters/get-fee-window", () => {
         startTime: 1509065473,
         feeWindowEthFees: "2000",
         feeWindowRepStaked: "1100",
+        feeWindowFeeTokens: "100",
+        feeWindowParticipationTokens: "1000",
         universe: "0x000000000000000000000000000000000000000b",
       });
     },
@@ -108,8 +113,11 @@ describe("server/getters/get-fee-window", () => {
         participantContributionsCrowdsourcer: "0",
         participantContributionsInitialReport: "102",
         participationTokens: "30",
+        participantParticipationTokens: "30",
         feeWindowEthFees: "2000",
         feeWindowRepStaked: "1100",
+        feeWindowFeeTokens: "100",
+        feeWindowParticipationTokens: "1000",
         universe: "0x000000000000000000000000000000000000000b",
       });
     },
@@ -150,6 +158,8 @@ describe("server/getters/get-fee-window", () => {
         feeWindowEthFees: "0",
         feeWindowId: 459,
         feeWindowRepStaked: "0",
+        feeWindowFeeTokens: "0",
+        feeWindowParticipationTokens: "0",
         startTime: 1509065473,
         universe: "CHILD_UNIVERSE",
       });
@@ -196,8 +206,11 @@ describe("server/getters/get-fee-window", () => {
         participantContributionsCrowdsourcer: "0",
         participantContributionsInitialReport: "0",
         participationTokens: "0",
+        participantParticipationTokens: "0",
         feeWindowEthFees: "2000",
         feeWindowRepStaked: "1100",
+        feeWindowFeeTokens: "100",
+        feeWindowParticipationTokens: "1000",
         universe: "0x000000000000000000000000000000000000000b",
       });
     },

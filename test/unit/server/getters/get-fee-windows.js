@@ -3,7 +3,7 @@
 const { BigNumber } = require("bignumber.js");
 const assert = require("chai").assert;
 const setupTestDb = require("../../test.database");
-const { getFeeWindows } = require("../../../../src/server/getters/get-fee-windows");
+const { dispatchJsonRpcRequest } = require("../../../../src/server/dispatch-json-rpc-request");
 const { setOverrideTimestamp } = require("../../../../src/blockchain/process-block");
 
 describe("server/getters/get-fee-windows", () => {
@@ -13,7 +13,8 @@ describe("server/getters/get-fee-windows", () => {
         assert.ifError(err);
         setOverrideTimestamp(db, 1509065471, (err) => {
           assert.ifError(err);
-          getFeeWindows(db, t.params.augur, t.params.universe, t.params.account, t.params.includeCurrent, (err, feeWindows) => {
+          t.method = "getFeeWindows";
+          dispatchJsonRpcRequest(db,  t, t.params.augur, (err, feeWindows) => {
             t.assertions(err, feeWindows);
             db.destroy();
             done();
@@ -50,13 +51,13 @@ describe("server/getters/get-fee-windows", () => {
           startTime: 1506473473,
           endTime: 1506473515,
           balance: "100",
-          expectedFees: new BigNumber("100").times(1000).dividedBy(300).toFixed(),
+          expectedFees: new BigNumber("100").times(1000).dividedBy(300).toString(),
         },
         "0x2000000000000000000000000000000000000000": {
           startTime: 1509065473,
           endTime: 1509670273,
           balance: "500",
-          expectedFees: new BigNumber("500").times(2000).dividedBy(1100).toFixed(),
+          expectedFees: new BigNumber("500").times(2000).dividedBy(1100).toString(),
         },
       });
     },
@@ -89,7 +90,7 @@ describe("server/getters/get-fee-windows", () => {
           startTime: 1506473473,
           endTime: 1506473515,
           balance: "100",
-          expectedFees: new BigNumber("100").times(1000).dividedBy(300).toFixed(),
+          expectedFees: new BigNumber("100").times(1000).dividedBy(300).toString(),
         },
       });
     },
